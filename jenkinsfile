@@ -1,0 +1,335 @@
+/* testing jenkins file */
+
+node ('Win10') {
+  echo "Initial multi-thread pipeline..."
+}
+
+teamsUrl = "https://hell.webhook.office.com/webhookb2/68f3dac6-cf38-42a5-a4bf-69adfc1869dc@945c199a-83a2-4e80-9f8c-5a91be5752dd/IncomingWebhook/1922f62fd23341a59a5c85ee259a4e3f/7aadc77b-2395-46d5-93fe-a4e5ec6a2b99"
+
+
+repo_config = [
+      "Lagos" : [
+                  "arti" : "foxconn,inventec,wistron,insyde",
+                  "generation" : "16G",
+                  "email" : "hawk.sun@hell.com",
+                  "branch" : "main",
+                  "script" : "",
+                ],
+      "EagleMnt" : [
+                  "arti" : "foxconn",
+                  "generation" : "16G",
+                  "email" : "harry.chang@hell.com,cecil.sheng@hell.com,jose.grande@hell.com,eric.hsu1@hell.com",
+                  "branch" : "main",
+                  "script" : "",
+		  "build_dir" : "Build_Genoa",
+                ],
+      "Brazos" : [
+                  "arti" : "foxconn",
+                  "generation" : "16G",
+                  "email" : "harry.chang@hell.com,cecil.sheng@hell.com,jose.grande@hell.com,eric.hsu1@hell.com",
+                  "branch" : "main",
+                  "script" : "",
+		  "build_dir" : "Build_Genoa",
+                ],
+      "MonteCarlo" : [
+                  "arti" : "foxconn,inventec,wistron,compal",
+                  "generation" : "15G",
+                  "email" : "nelson.fu@hell.com",
+                  "branch" : "stg/15g_main",
+                  "script" : "",
+                ],
+      "Alar" : [
+                  "arti" : "inventec,wistron,compal",
+                  "generation" : "15G",
+                  "email" : "harry.chang@hell.com,cecil.sheng@hell.com",
+                  "branch" : "stg/15g_main",
+                  "script" : "_dual",
+                ],
+      "Sesto" : [
+                  "arti" : "inventec,wistron,compal",
+                  "generation" : "15G",
+                  "email" : "harry.chang@hell.com,eric.hsu1@hell.com",
+                  "branch" : "stg/15g_main",
+                  "script" : "_dual",
+                ],
+      "Roadster" : [
+                  "arti" : "inventec,wistron,compal",
+                  "generation" : "15G",
+                  "email" : "harry.chang@hell.com,eric.hsu1@hell.com",
+                  "branch" : "stg/15g_main",
+                  "script" : "_dual",
+                ],
+      "Atlas" : [
+                  "arti" : "foxconn,inventec,wistron",
+                  "generation" : "14G",
+                  "email" : "benjamin.lin@hell.com",
+                  "branch" : "stg/14gmlk",
+                  "script" : "",
+                ],
+      "Cota" : [
+                  "arti" : "wistron",
+                  "generation" : "15G",
+                  "email" : "john_cc_chen@hell.com",
+                  "branch" : "stg/15g_main",
+                  "script" : "",
+                ],
+
+    ]
+
+//
+// Required due to JENKINS-27421
+@NonCPS
+List<List<?>> mapToList(Map map) {
+  return map.collect { it ->
+    [it.key, it.value]
+  }
+}
+
+
+
+@NonCPS
+def checkout_from_git(ref, hash) {
+      def reponame = 'aquila'
+      def repo_url = "https://eos2git.cec.lab.emc.com/PowerBIPS/${reponame}.git"
+
+      echo "Checkout ${hash} from reference ${ref}"
+
+      checkout([
+        $class: 'GitSCM',
+        branches: [[name: "refs/heads/${ref}"]],
+        doGenerateSubmoduleConfigurations: false,
+               submoduleCfg: [],
+        extensions: [
+           [$class: 'CloneOption', depth: 1, timeout:30, honorRefspec:true],
+           [$class: 'CheckoutOption', timeout:30]
+           //[$class: 'CleanCheckout']
+        ],
+        userRemoteConfigs: [
+           [credentialsId: 'eos_github', url: repo_url, refspec: "+refs/heads/${ref}:refs/remotes/origin/${ref}"]
+        ]
+      ])
+}
+
+
+// Create a compile job for each item in `data`
+work = [:]
+echo "Changes on branch ${branch}"
+for (kv in mapToList(repo_config)) {
+  if ("refs/heads/${repo_config[kv[0]]['branch']}" == "${branch}") {
+    work[kv[0]] = createCompileJob(kv[0])
+  }
+}
+
+// Execute each compile job in parallel
+parallel work
+
+
+def createCompileJob(k) {
+  return {
+node ('Win10') {
+    ws('build') {
+      stage('clone') {
+        cleanWs()
+        def repos_early = "${repo_config[k]['arti']}".tokenize(",")
+        repos_early.each {r -> echo ("repository to process ${r}")}
+
+	def ref = "${repo_config[k]['branch']}"
+	def hash = 'HEAD'
+
+        def reponame = 'aquila'
+        def repo_url = "https://eos2git.cec.lab.emc.com/PowerBIPS/${reponame}.git"
+
+        echo "Checkout ${hash} from reference ${ref}"
+
+        checkout([
+          $class: 'GitSCM',
+          branches: [[name: "refs/heads/${ref}"]],
+          doGenerateSubmoduleConfigurations: false,
+                 submoduleCfg: [],
+          extensions: [
+             [$class: 'CloneOption', depth: 1, timeout:30, honorRefspec:true,reference: '\\\\pba-servant12\\repo_mirror\\aquila.git' ],
+             [$class: 'CheckoutOption', timeout:30],
+	     [$class: 'AuthorInChangelog'],
+           //[$class: 'CleanCheckout']
+          ],
+          userRemoteConfigs: [
+             [credentialsId: 'eos_github', url: repo_url, refspec: "+refs/heads/${ref}:refs/remotes/origin/${ref}"]
+          ]
+        ])
+        //echo "Triggered by commit ${commit}"
+      }
+
+      stage('build') {
+
+        //commit = get_git_commit()
+        echo ("Start to build commit '${commit}'")
+        branch = "${repo_config[k]['branch']}"
+        try {
+
+/*  Build start notification
+          office365ConnectorSend webhookUrl: "${teamsUrl}",
+            color: '#33E5FF',
+            status: 'Build Start',
+            message: "Bitbutcket Build Started ${env.JOB_NAME} ${env.BUILD_NUMBER} on commit ${commit}",
+            factDefinitions: [
+              [name: "Platform", template: "${k}"],
+              [name: "Bulid Script", template: "makea${params.BuildScript}.bat"]
+            ]
+
+          emailext (
+            subject: "Bitbucket Build Started: '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            mimeType: 'text/html',
+            to:"cecil.sheng@hell.com",
+            body: """<h1>Started: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':</h1>
+              <p>On commit ${commit}.</p>
+              <ul>
+                <ui>Platform: <b>${k}</b></ui>
+                <ui>Build Script:<b>makea${params.BuildScript}.bat</b></ui>
+              </ul>
+              <p>Check console output at &QUOT;<a href='${env.BUILD_URL}'>${env.JOB_NAME} [${env.BUILD_NUMBER}]</a>&QUOT;</p>"""
+            //recipientProviders: [[$class: 'DevelopersRecipientProvider']]
+
+          )
+*/
+          // git clean -x -d -f - removed because of cleanWs
+	  timeout(time: 50, unit: 'MINUTES') {
+          	bat ("""
+                     cd hellPkgs\\hellPlatformPkgs\\hell${k}Pkg
+                     mkdir BIPSRecovery
+                     copy release.bat BIPSRecovery\\${k}_16MBRecoveryBIPS.rom
+                     makea${repo_config[k]['script']}.bat -x DEFAULT
+                """)
+
+          	currentBuild.result = 'SUCCESS'
+
+	  }
+        } catch (e) {
+          currentBuild.result = 'FAILED'
+
+          office365ConnectorSend webhookUrl: "${teamsUrl}",
+            color: '#FF5733',
+            status: 'Build Failure',
+            message: "GitHub Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER} on commit ${commit}",
+            factDefinitions: [
+              [name: "Platform", template: "${k}"],
+              [name: "Bulid Script", template: "makea${repo_config[k]['script']}.bat"]
+            ]
+
+          emailext (
+            attachLog: true,
+	    compressLog: true,
+            subject: "GitHub Build Failed: '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            mimeType: 'text/html',
+            to:"cecil.sheng@hell.com, ${repo_config[k]['email']}",
+            recipientProviders: [ culprits(), developers(), requestor()],
+            body: """<h1>Failed: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':</h1>
+                  <p>On commit <i>${commit}</i> at branch <i>${branch}</i>.</p>
+                  <ul>
+                    <ui>Platform: <b>${k}</b></ui>
+                    <ui>Build Script:<b>makea${repo_config[k]['script']}.bat</b></ui>
+                  </ul>
+                  <p>Check console output at &QUOT;<a href='${env.BUILD_URL}'>${env.JOB_NAME} [${env.BUILD_NUMBER}]</a>&QUOT;</p>"""
+            //recipientProviders: [[$class: 'DevelopersRecipientProvider']]
+
+          )
+
+          throw e
+        } finally {
+          def currentResult = currentBuild.result ?: 'SUCCESS'
+          if (currentResult == 'UNSTABLE') {
+            //echo 'This will run only if the run was marked as unstable'
+          }
+
+          /* Build success notification */
+          if (currentResult == 'SUCCESS') {
+            office365ConnectorSend webhookUrl: "${teamsUrl}",
+              color: '#FF5733',
+              status: 'Build Success',
+              message: "GitHub Build Completed: ${env.JOB_NAME} ${env.BUILD_NUMBER} on commit ${commit}",
+              factDefinitions: [
+                [name: "Platform", template: "${k}"],
+                [name: "Bulid Script", template: "makea${repo_config[k]['script']}.bat"]
+              ]
+          }
+          
+
+
+          def previousResult = currentBuild.previousBuild?.result
+          if (previousResult != null && previousResult != currentResult) {
+            //echo 'This will run only if the state of the Pipeline has changed'
+            //echo 'For example, if the Pipeline was previously failing but is now successful'
+          }
+
+          //echo 'This will always run'
+        } // finally
+      } // stage('build')
+
+        stage ('restricted') {
+
+              def script_url = "https://eos2git.cec.lab.emc.com/cecil-sheng/pba_jenkins.git"
+              echo "Checkout from script repo"
+              checkout([
+                $class: 'GitSCM',
+                extensions: [
+                  [$class: 'RelativeTargetDirectory', relativeTargetDir: 'script'],
+                ],
+                userRemoteConfigs: [
+                  [credentialsId: 'eos_github', url: script_url ]
+                ]
+              ])
+
+
+              echo ("Starting script on node ${env.NODE_NAME}")
+
+	      if (repo_config[k].containsKey('build_dir')) {
+              	bat ("""
+			set BUILD_DIR=${WORKSPACE}\\${repo_config[k]['build_dir']}
+			script\\update_binary${repo_config[k]['script']}.bat hell${k}Pkg ${WORKSPACE}""")
+	      } else {
+              	bat ("script\\update_binary${repo_config[k]['script']}.bat hell${k}Pkg ${WORKSPACE}")
+	      }
+
+              echo ("Start to upload for commit '${commit}'")
+
+              def server = Artifactory.server('arti-external')
+              def hash = commit[0..10]
+              def repos = "${repo_config[k]['arti']}".tokenize(",")
+              repos.each { repo->
+                //def server = Artifactory.newServer('artifactory-url', 'username', 'password')
+
+                echo ("Uploading to repository poweredge-${repo} [${hash}] / [${commit}]")
+                // Create the upload spec.
+                def uploadSpec = """{
+                  "files": [
+                          {
+                              "pattern": "hellPkgs/hellPlatformPkgs/hell${k}Pkg/hellRestrictedBinaryPkg/(*)",
+                              "target": "poweredge-${repo}/From_hell/${repo_config[k]['generation']}/${k}/RestrictedBinaries/${hash}/hellRestrictedBinaryPkg/{1}",
+                              "flat" : "false",
+                              "recursive" : "true"
+                          }
+                      ]
+                  }"""
+                // Upload to Artifactory.
+
+	  	timeout(time: 20, unit: 'MINUTES') {
+               	 def buildInfo1 = server.upload (uploadSpec)
+		}
+              }
+
+              // server.publishBuildInfo(buildInfo1)
+        } // stage restricted
+
+    } // ws
+
+
+} // node
+
+  }
+}
+
+
+
+
+
+
+
